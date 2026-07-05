@@ -1,0 +1,158 @@
+---
+title: "DatacleaningTS"
+author: "Anshul"
+date: "2026-03-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Acknowledgement: https://cran.r-project.org/web/packages/lubridate/vignettes/lubridate.html for details about the lubridate package and handling of dates
+library(tidyverse)
+library(lubridate)
+```
+
+```{r}
+# Downloaded from: https://www.investing.com/indices/us-spx-500-historical-data 
+sp500 = read.csv("C:/Users/anshu/OneDrive - Grinnell College/SP500.csv")
+sp500
+
+# Downloaded from: https://indexes.nasdaqomx.com/Index/History/NQROBOUS
+nqrobous = read.csv("C:/Users/anshu/OneDrive - Grinnell College/NQROBOUS.csv")
+nqrobous
+
+# Downloaded from: https://indexes.nasdaqomx.com/Index/History/CELS 
+cels = read.csv("C:/Users/anshu/OneDrive - Grinnell College/CELS.csv")
+cels
+
+# Downloaded from: https://www.investing.com/indices/dj-oil---gas-historical-data 
+djusen = read.csv("C:/Users/anshu/OneDrive - Grinnell College/DJUSEN.csv")
+djusen
+
+# Downloaded from: https://fred.stlouisfed.org/series/DFF 
+dff = read.csv("C:/Users/anshu/OneDrive - Grinnell College/DFF.csv")
+dff
+```
+
+```{r}
+# cleaning data acquired from investing.com
+
+# djusen index cleaning
+djusen_cleaned <- djusen %>%
+  # removing unneccesary variables
+  select(- Open, - Vol., - High, - Low, - Change..)%>%
+  # renaming the variables to a standard name
+  rename("djusen_ind" = "Price")%>%
+  # casting the values to be numeric or date types if stored in character form
+  mutate(djusen_ind = as.numeric(str_replace(djusen_ind,",","")),
+         Date = mdy(Date))
+
+# sp500 index cleaning
+sp500_cleaned = sp500 %>%
+  # removing unneccesary variables
+  select(- Open, - Vol., - High, - Low, - Change..)%>%
+  # renaming the variables to a standard name
+  rename("sp500_ind" = "Price")%>%
+  # casting the values to be numeric or date types if stored in character form
+  mutate(sp500_ind = as.numeric(str_replace(sp500_ind,",","")),
+         Date = mdy(Date))
+djusen_cleaned
+sp500_cleaned
+```
+
+```{r}
+# cleaning data acquired from nasdaq
+cels_cleaned <- cels %>%
+  # removing unneccesary columns
+  select(-High, -Low, -Net.Change)%>%
+  # renaming the variables to a standard name
+  rename("cels_ind" = "Index.Value", "Date" = "Trade.Date")%>%
+  # casting the values to be numeric or date types if stored in character form
+  mutate(cels_ind = as.numeric(str_replace(cels_ind,",","")),
+         Date = mdy(Date))
+
+nqrobous_cleaned <- nqrobous %>%
+  # removing unneccesary columns
+  select(-High, -Low, -Net.Change)%>%
+  # renaming the variables to a standard name
+  rename("nqrobous_ind" = "Index.Value", "Date" = "Trade.Date")%>%
+  # casting the values to be numeric or date types if stored in character form
+  mutate(nqrobous_ind = as.numeric(str_replace(nqrobous_ind,",","")),
+         Date = mdy(Date))
+cels_cleaned
+nqrobous_cleaned
+```
+```{r}
+# cleaning th federul funds rate data
+dff_cleaned = dff %>%
+  # Renaming the variable
+  rename("Date" = "observation_date",
+         "DFF_ind" = "DFF")%>%
+  # casting the values to be date type if stored in character form
+  mutate(Date = ymd(Date)) 
+
+dff_cleaned
+```
+
+
+```{r}
+# merging all the individual datasets into one
+final_df <- dff_cleaned %>%
+  left_join(cels_cleaned, "Date") %>%
+  left_join(nqrobous_cleaned, "Date") %>%
+  left_join(djusen_cleaned, "Date") %>%
+  left_join(sp500_cleaned, "Date")%>%
+  mutate(Year = year(Date))
+
+# removing the NA values which were due to markets being closed on weekends
+final_df = na.omit(final_df)
+final_df
+```
+
+```{r}
+sum_stats <- final_df %>%
+  group_by(Year)%>%
+  summarize(
+    means_DFF = mean(DFF_ind),
+    sd_DFF = sd(DFF_ind),
+    means_cels = mean(cels_ind),
+    sd_cels = sd(cels_ind),
+    means_nqrobous = mean(nqrobous_ind),
+    sd_nqrobous = sd(nqrobous_ind),
+    means_djusen = mean(djusen_ind),
+    sd_djusen = sd(djusen_ind),
+    means_sp500 = mean(sp500_ind),
+    sd_sp500 = sd(sp500_ind),
+  )
+sum_stats
+```
+
+```{r}
+final_df_long <- final_df %>%
+  select(-DFF_ind, - sp500_ind)%>%
+  rename("NQROBOUS" = "nqrobous_ind", "CELS" = "cels_ind", "DJUSEN" = "djusen_ind") %>%
+  pivot_longer(cols = c(NQROBOUS, DJUSEN, CELS),
+               names_to = "index_names",
+               values_to = "index_values") %>%
+  mutate(index_names = ifelse(index_names == "NQROBOUS", "NASDAQ CTA AI And Robotics U.S. Index", ifelse(index_names == "DJUSEN", "Dow Jones U.S. Oil and Gas Index", ifelse(index_names == "CELS", "NASDAQ Clean Edge Energy Index", NA)))) %>%
+  rename("Segment Index" = "index_names")
+
+```
+
+```{r}
+final_df_long
+```
+
+
+```{r}
+ggplot(final_df_long, aes(x = Date, y = index_values, color = `Segment Index` , shape = `Segment Index`)) +
+  geom_line()+
+  geom_point(data = final_df_long %>% dplyr::slice(seq(1, n(), by = 20)),
+    aes(shape = `Segment Index`, color = `Segment Index`),
+    size = 1.5) +
+  labs(x = "Time", y = "Price Index", title = "Segment Price Indices over time", subtitle = "For years 2021-2025")
+  
+```
+
+
+
